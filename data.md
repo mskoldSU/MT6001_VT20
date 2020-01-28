@@ -1,6 +1,8 @@
 
-Kursen Statistisk databehandling är användbar om man vill arbeta med
-data
+Kursen Statistisk databehandling är användbar om man vill arbeta med typ
+en av data som förekommer i projekten. Här läser vi in och gör några
+enkla visualiseringar av data för metaller i det marina programmet som
+illustration.
 
 ``` r
 library(tidyverse)
