@@ -1,0 +1,79 @@
+---
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+Kursen Statistisk databehandling är användbar om man vill arbeta med data
+```{r}
+library(tidyverse)
+data <- read_csv("metals.csv", guess_max = 5000) # Innehåller metaller från och med 2007
+glimpse(data)
+```
+Här är `ACCNR` museets id-nummer i samlingarna. Homogenat känns igen genom att de innehåller ett bindestreck, t.ex. `C12/03302-03313`. `NHOM` är antalet individer i  ett homogenat (oftast `NA` om det är en individ). `FATPRC` är procent fett i vävnaden och `PB`-`HG` är koncentrationer av metaller (om koncentrationen är under detektionsgränsen $x$ anges värdet $-x$). Övriga variabler borde vara självförklarande. För vissa arter (musslor och fågelägg) saknas t.ex. ålder. De olika arterna är, med respektive antal obs
+
+```{r}
+table(data$SPECIES) %>% knitr::kable()
+```
+
+Vi kan bestämma årsvisa geometriska medelvärden med
+
+```{r}
+geomean <- function(x) exp(mean(log(x), na.rm = TRUE))
+fix_loq <- function(x) ifelse(x < 0, abs(x) / sqrt(2), x) # Byter LOQ mot LOG/sqrt(2)
+
+agg_data <- data %>% 
+  mutate_at(vars(PB:HG), fix_loq) %>% 
+  group_by(LOC, YEAR, SPECIES, LAT, LONG) %>% 
+  summarise_at(vars(PB:HG), geomean) %>% 
+  ungroup()
+head(agg_data)
+```
+
+och plotta t.ex. bly i torsklever
+
+```{r}
+agg_data %>% filter(SPECIES == "Cod") %>% 
+  ggplot(aes(x = YEAR, y = PB)) + geom_point() + geom_line() + facet_wrap(~LOC) + theme_bw()
+```
+
+eller det senaste värdet för strömming på en karta
+
+```{r}
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(sf)
+world_map <- ne_countries(scale = "medium", returnclass = "sf") %>% 
+  st_crop(c(xmin=8, xmax=25, ymin=54, ymax=70))
+ggplot(world_map) + geom_sf(color = "white", fill = "grey") + 
+  geom_point(data = filter(agg_data, SPECIES == "Herring", YEAR == 2018), aes(x = LONG, y = LAT, color = PB)) +
+  theme_minimal() + xlab("") + ylab("")
+```
+
+
+
+Vi kan anpassa en linjär regression till koncentrationen bly i strömming vid varje lokal
+
+```{r}
+lm_fits <- agg_data %>% 
+  filter(SPECIES == "Herring") %>% 
+  group_by(LOC) %>% 
+  nest() %>% 
+  mutate(fit = map(data, ~lm(log(PB) ~ YEAR, data = .x))) %>% 
+  ungroup()
+head(lm_fits)
+```
+
+och t.ex. visualisera trenderna
+
+```{r}
+lm_fits %>% mutate(slope = map_dbl(fit, ~coef(.x)["YEAR"]),
+                   trend = (exp(slope) - 1)*100,
+                   LOC = fct_reorder(LOC, trend)) %>% 
+  ggplot(aes(x = LOC, y = trend)) + geom_col() + 
+  coord_flip() + theme_bw() + ylab("Yearly percent change") + xlab("")
+```
+
+
